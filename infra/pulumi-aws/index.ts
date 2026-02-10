@@ -8,6 +8,7 @@ const config = new pulumi.Config();
 
 const namePrefix = config.get("namePrefix") ?? "nomad-dev";
 const instanceType = config.get("instanceType") ?? "t3.micro";
+const rootVolumeSizeGiB = config.getNumber("rootVolumeSizeGiB") ?? 8;
 const enablePublicSsh = config.getBoolean("enablePublicSsh") ?? false;
 const allowedSshCidr = config.get("allowedSshCidr");
 const allowWideOpenSsh = config.getBoolean("allowWideOpenSsh") ?? false;
@@ -198,6 +199,9 @@ const userData = pulumi.all([tailscaleAuthKey]).apply(([authKey]) => {
 const instance = new aws.ec2.Instance(`${namePrefix}-host`, {
   ami: amiId,
   instanceType,
+  rootBlockDevice: {
+    volumeSize: rootVolumeSizeGiB,
+  },
   subnetId,
   vpcSecurityGroupIds: [securityGroup.id],
   keyName: instanceKeyName,

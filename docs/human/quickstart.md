@@ -18,14 +18,26 @@ This guide assumes no prior knowledge of Nomad Dev.
 ## 1) Provision the host
 ```bash
 cd infra/pulumi-aws
-npm install
+npm ci
 pulumi login
 pulumi stack init dev
 pulumi config set aws:region us-east-1
 pulumi config set sshPublicKeyPath ~/.ssh/nomad-dev.pub
+pulumi config set rootVolumeSizeGiB 30
 pulumi config set enablePublicSsh false
 pulumi up
 ```
+
+If you resize disk on an existing host, expand the filesystem after `pulumi up`:
+```bash
+lsblk
+df -hT
+sudo growpart /dev/nvme0n1 1
+sudo resize2fs /dev/nvme0n1p1
+df -hT
+```
+
+Use `sudo xfs_growfs -d /` instead of `resize2fs` on XFS.
 
 ## 2) Prepare host tools
 If Pulumi user-data was interrupted, run:

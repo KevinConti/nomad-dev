@@ -16,11 +16,12 @@ This stack provisions an Ubuntu 22.04 EC2 instance for Nomad Dev.
 
 ## Quickstart
 ```bash
-npm install
+npm ci
 pulumi login
 pulumi stack init dev
 pulumi config set aws:region us-east-1
 pulumi config set sshPublicKeyPath ~/.ssh/nomad-dev.pub
+pulumi config set rootVolumeSizeGiB 30
 pulumi config set enablePublicSsh false
 pulumi up
 ```
@@ -28,6 +29,7 @@ pulumi up
 ## Config options
 - `namePrefix` (default `nomad-dev`)
 - `instanceType` (default `t3.micro`)
+- `rootVolumeSizeGiB` (default `8`)
 - `amiId` (optional explicit AMI)
 - `keyName` (optional existing EC2 key pair)
 - `sshPublicKey` or `sshPublicKeyPath` (one required if `keyName` unset)
@@ -75,6 +77,27 @@ pulumi config set enableMosh true
 pulumi config set enablePublicMoshIngress true
 pulumi config set allowedMoshCidr 0.0.0.0/0
 pulumi config set allowWideOpenMosh true
+```
+
+## Root volume resizing
+Increase root volume size:
+```bash
+pulumi config set rootVolumeSizeGiB 30
+pulumi up
+```
+
+If resizing an existing host, expand the filesystem on the instance after `pulumi up`:
+```bash
+lsblk
+df -hT
+sudo growpart /dev/nvme0n1 1
+sudo resize2fs /dev/nvme0n1p1
+df -hT
+```
+
+If your root filesystem is XFS, use:
+```bash
+sudo xfs_growfs -d /
 ```
 
 ## Integrity and provenance
