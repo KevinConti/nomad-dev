@@ -4,7 +4,8 @@ This stack provisions an Ubuntu 22.04 EC2 instance for Nomad Dev.
 
 ## Security defaults
 - `enablePublicSsh=false`
-- `enableMosh=false`
+- `enableMosh=true`
+- `enablePublicMoshIngress=false`
 - `enableTailscaleUdp=false`
 - IMDSv2 required
 
@@ -33,7 +34,10 @@ pulumi up
 - `enablePublicSsh` (default `false`)
 - `allowedSshCidr` (required when `enablePublicSsh=true`)
 - `allowWideOpenSsh` (default `false`; must be `true` to allow `0.0.0.0/0`)
-- `enableMosh` (default `false`; requires public SSH configuration)
+- `enableMosh` (default `true`)
+- `enablePublicMoshIngress` (default `false`)
+- `allowedMoshCidr` (optional; required when `enablePublicMoshIngress=true` unless `allowedSshCidr` is set)
+- `allowWideOpenMosh` (default `false`; must be `true` to allow `0.0.0.0/0` for Mosh ingress)
 - `enableTailscaleUdp` (default `false`)
 - `tailscaleAuthKey` (optional secret)
 
@@ -49,6 +53,28 @@ Explicitly allow world-open SSH (not recommended):
 pulumi config set enablePublicSsh true
 pulumi config set allowedSshCidr 0.0.0.0/0
 pulumi config set allowWideOpenSsh true
+```
+
+## Mosh modes
+Use Mosh over Tailscale only (recommended):
+```bash
+pulumi config set enableMosh true
+pulumi config set enablePublicMoshIngress false
+```
+
+Enable internet-facing Mosh with a narrow CIDR:
+```bash
+pulumi config set enableMosh true
+pulumi config set enablePublicMoshIngress true
+pulumi config set allowedMoshCidr 203.0.113.4/32
+```
+
+Explicitly allow world-open Mosh ingress (not recommended):
+```bash
+pulumi config set enableMosh true
+pulumi config set enablePublicMoshIngress true
+pulumi config set allowedMoshCidr 0.0.0.0/0
+pulumi config set allowWideOpenMosh true
 ```
 
 ## Integrity and provenance

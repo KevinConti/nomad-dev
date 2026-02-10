@@ -45,7 +45,8 @@ pulumi up
 
 2. Keep secure defaults (recommended):
 - Leave `enablePublicSsh=false`.
-- Leave `enableMosh=false` unless needed.
+- Keep `enableMosh=true` for Tailscale-based Mosh sessions.
+- Leave `enablePublicMoshIngress=false` unless you intentionally want public Mosh UDP exposure.
 - Leave `enableTailscaleUdp=false` unless you need direct UDP.
 
 3. Install Nomad Dev files into a repo on the host:
