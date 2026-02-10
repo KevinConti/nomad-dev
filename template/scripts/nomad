@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONFIG_FILE="$ROOT_DIR/.nomad-dev/config.env"
+
+NOMAD_NTFY_SERVER="https://ntfy.sh"
+NOMAD_NTFY_TOPIC=""
+NOMAD_NTFY_TOKEN=""
+NOMAD_NTFY_PRIORITY=""
+
+usage() {
+  cat <<'USAGE'
+Nomad Dev helper
+
+Usage:
+  nomad notify [--priority <p>] "message"
+  nomad wait-notify [--priority <p>] <seconds> "message"
+  nomad help
+USAGE
+}
+
+set_config_value() {
+  local key="$1"
+  local value="$2"
+
+  case "$key" in
+    NOMAD_NTFY_SERVER) NOMAD_NTFY_SERVER="$value" ;;
+    NOMAD_NTFY_TOPIC) NOMAD_NTFY_TOPIC="$value" ;;
+    NOMAD_NTFY_TOKEN) NOMAD_NTFY_TOKEN="$value" ;;
+    NOMAD_NTFY_PRIORITY) NOMAD_NTFY_PRIORITY="$value" ;;
+    *) ;;
+  esac
+}
+
+parse_config_line() {
+  local line="$1"
+  local assignment_re='^[[:space:]]*([A-Z0-9_]+)[[:space:]]*=[[:space:]]*"([^"]*)"[[:space:]]*$'
+
+  if [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]]; then
+    return 0
+  fi
+
+  if [[ "$line" =~ $assignment_re ]]; then
+    set_config_value "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    return 0
+  fi
+
+  echo "Invalid config line in $CONFIG_FILE: $line" >&2
+  echo "Expected format: KEY=\"value\"" >&2
+  exit 1
+}
+
+validate_config() {
+  NOMAD_NTFY_SERVER="${NOMAD_NTFY_SERVER%/}"
+
+  if [[ -z "$NOMAD_NTFY_TOPIC" ]]; then
+    echo "NOMAD_NTFY_TOPIC is not set in $CONFIG_FILE" >&2
+    exit 1
+  fi
+
+  if [[ ! "$NOMAD_NTFY_SERVER" =~ ^https://[^[:space:]]+$ ]]; then
+    echo "NOMAD_NTFY_SERVER must be an https URL." >&2
+    exit 1
+  fi
+
+  if [[ ! "$NOMAD_NTFY_TOPIC" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$ ]]; then
+    echo "NOMAD_NTFY_TOPIC must match ^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$." >&2
+    exit 1
+  fi
+
+  if [[ -n "$NOMAD_NTFY_PRIORITY" ]] && [[ ! "$NOMAD_NTFY_PRIORITY" =~ ^([1-5]|min|low|default|high|max|urgent)$ ]]; then
+    echo "NOMAD_NTFY_PRIORITY must be 1-5 or one of: min, low, default, high, max, urgent." >&2
+    exit 1
+  fi
+}
+
+require_config() {
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Missing config: $CONFIG_FILE" >&2
+    exit 1
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    parse_config_line "$line"
+  done < "$CONFIG_FILE"
+
+  validate_config
+}
+
+ensure_curl() {
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl is required" >&2
+    exit 1
+  fi
+}
+
+send_notification() {
+  local message="$1"
+  local priority="${2:-}"
+  local server="$NOMAD_NTFY_SERVER"
+  local topic="$NOMAD_NTFY_TOPIC"
+  local token="$NOMAD_NTFY_TOKEN"
+
+  local auth_header=()
+  if [[ -n "$token" ]]; then
+    auth_header=(--header "Authorization: Bearer $token")
+  fi
+
+  local priority_header=()
+  if [[ -n "$priority" ]]; then
+    priority_header=(--header "Priority: $priority")
+  fi
+
+  curl \
+    --silent \
+    --show-error \
+    --fail \
+    --retry 3 \
+    --retry-delay 1 \
+    --connect-timeout 5 \
+    --max-time 20 \
+    "${auth_header[@]}" \
+    "${priority_header[@]}" \
+    --data-binary "$message" \
+    "$server/$topic" \
+    >/dev/null
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  notify)
+    require_config
+    ensure_curl
+    priority="$NOMAD_NTFY_PRIORITY"
+    if [[ "${1:-}" == "--priority" || "${1:-}" == "-p" ]]; then
+      priority="$2"
+      shift 2
+    fi
+    message="${*:-nomad notification}"
+    send_notification "$message" "$priority"
+    ;;
+  wait-notify)
+    require_config
+    ensure_curl
+    priority="$NOMAD_NTFY_PRIORITY"
+    if [[ "${1:-}" == "--priority" || "${1:-}" == "-p" ]]; then
+      priority="$2"
+      shift 2
+    fi
+    seconds="${1:-10}"
+    shift || true
+    message="${*:-nomad notification}"
+    sleep "$seconds"
+    send_notification "$message" "$priority"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $cmd" >&2
+    usage
+    exit 1
+    ;;
+esac

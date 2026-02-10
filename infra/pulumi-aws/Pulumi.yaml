@@ -1,0 +1,3 @@
+name: nomad-dev-aws
+runtime: nodejs
+description: Nomad Dev AWS VPS (Ubuntu 22.04) with Tailscale, Mosh, tmux, and ntfy-ready bootstrap

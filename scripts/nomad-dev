@@ -1,0 +1,366 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TEMPLATE_DIR="$ROOT_DIR/template"
+
+usage() {
+  cat <<'USAGE'
+Nomad Dev installer
+
+Usage:
+  nomad-dev install --target /path/to/repo [options]
+  nomad-dev update --target /path/to/repo [options]
+  nomad-dev clone-install --repo <git-url> --target /path/to/repo [options]
+  nomad-dev help
+
+Options:
+  --force               Overwrite existing files
+  --repo <git-url>      Git URL to clone (for clone-install)
+  --branch <name>       Git branch to clone (for clone-install)
+  --ntfy-topic <topic>  Set NOMAD_NTFY_TOPIC in the target config
+  --ntfy-server <url>   Set NOMAD_NTFY_SERVER in the target config
+  --ntfy-token <token>  Set NOMAD_NTFY_TOKEN in the target config
+  --ntfy-priority <p>   Set NOMAD_NTFY_PRIORITY in the target config
+  --random-topic        Generate a random topic and write it to config
+  --no-random-topic     Disable random-topic generation
+
+Notes:
+  - install/update copies files from template/ into the target repo.
+  - clone-install clones a repo, then runs install.
+  - use --force to overwrite existing files.
+  - install and clone-install generate a random topic by default.
+  - if any ntfy option is set, config.env will be overwritten.
+USAGE
+}
+
+require_template() {
+  if [[ ! -d "$TEMPLATE_DIR" ]]; then
+    echo "Template directory not found: $TEMPLATE_DIR" >&2
+    exit 1
+  fi
+}
+
+collect_collisions() {
+  local target="$1"
+  local collisions=()
+
+  while IFS= read -r rel; do
+    if [[ -e "$target/$rel" ]]; then
+      collisions+=("$rel")
+    fi
+  done < <(cd "$TEMPLATE_DIR" && find . -type f | sed 's|^\./||')
+
+  if (( ${#collisions[@]} > 0 )); then
+    printf '%s\n' "${collisions[@]}"
+  fi
+}
+
+copy_template() {
+  local target="$1"
+  local force="$2"
+  local preserve_config="$3"
+  local config_backup="$4"
+
+  local collisions
+  collisions="$(collect_collisions "$target")"
+
+  if [[ -n "$collisions" && "$force" != "true" ]]; then
+    echo "Refusing to overwrite existing files. Use --force to overwrite." >&2
+    echo "Conflicts:" >&2
+    echo "$collisions" >&2
+    exit 1
+  fi
+
+  (cd "$TEMPLATE_DIR" && tar cf - .) | (cd "$target" && tar xpf -)
+
+  if [[ "$preserve_config" == "true" && -n "$config_backup" && -f "$config_backup" ]]; then
+    mkdir -p "$target/.nomad-dev"
+    cp "$config_backup" "$target/.nomad-dev/config.env"
+    rm -f "$config_backup"
+  fi
+}
+
+require_git() {
+  if ! command -v git >/dev/null 2>&1; then
+    echo "git is required for clone-install" >&2
+    exit 1
+  fi
+}
+
+clone_repo() {
+  local repo="$1"
+  local target="$2"
+  local branch="$3"
+
+  if [[ -d "$target" && -n "$(ls -A "$target" 2>/dev/null)" ]]; then
+    echo "Target directory is not empty: $target" >&2
+    exit 1
+  fi
+
+  if [[ -n "$branch" ]]; then
+    git clone --branch "$branch" --single-branch "$repo" "$target"
+  else
+    git clone "$repo" "$target"
+  fi
+}
+
+generate_topic() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 8
+  else
+    LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 16
+  fi
+}
+
+escape_for_double_quotes() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+write_config() {
+  local path="$1"
+  local server="$2"
+  local topic="$3"
+  local token="$4"
+  local priority="$5"
+
+  if [[ -z "$server" ]]; then
+    server="https://ntfy.sh"
+  fi
+
+  if [[ -z "$topic" ]]; then
+    topic="replace-me"
+  fi
+
+  local escaped_server
+  local escaped_topic
+  local escaped_token
+  local escaped_priority
+
+  escaped_server="$(escape_for_double_quotes "$server")"
+  escaped_topic="$(escape_for_double_quotes "$topic")"
+  escaped_token="$(escape_for_double_quotes "$token")"
+  escaped_priority="$(escape_for_double_quotes "$priority")"
+
+  cat > "$path" <<CONFIG
+# Nomad Dev config for this repo
+# Keep the random topic unless you have a strong reason to change it.
+# If you set your own topic, use only letters/numbers plus . _ - characters.
+
+NOMAD_NTFY_SERVER="$escaped_server"
+NOMAD_NTFY_TOPIC="$escaped_topic"
+
+# Optional: Bearer token for private topics
+NOMAD_NTFY_TOKEN="$escaped_token"
+
+# Optional: default priority for notifications (1-5 or names like "urgent")
+NOMAD_NTFY_PRIORITY="$escaped_priority"
+CONFIG
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  install|update)
+    target=""
+    force="false"
+    ntfy_topic=""
+    ntfy_server=""
+    ntfy_token=""
+    ntfy_priority=""
+    random_topic="false"
+    random_topic_explicit="false"
+
+    if [[ "$cmd" == "install" ]]; then
+      random_topic="true"
+    fi
+
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --target)
+          target="$2"
+          shift 2
+          ;;
+        --force)
+          force="true"
+          shift
+          ;;
+        --ntfy-topic)
+          ntfy_topic="$2"
+          shift 2
+          ;;
+        --ntfy-server)
+          ntfy_server="$2"
+          shift 2
+          ;;
+        --ntfy-token)
+          ntfy_token="$2"
+          shift 2
+          ;;
+        --ntfy-priority)
+          ntfy_priority="$2"
+          shift 2
+          ;;
+        --random-topic)
+          random_topic="true"
+          random_topic_explicit="true"
+          shift
+          ;;
+        --no-random-topic)
+          random_topic="false"
+          random_topic_explicit="true"
+          shift
+          ;;
+        -h|--help)
+          usage
+          exit 0
+          ;;
+        *)
+          echo "Unknown option: $1" >&2
+          usage
+          exit 1
+          ;;
+      esac
+    done
+
+    if [[ -z "$target" ]]; then
+      echo "Missing --target" >&2
+      usage
+      exit 1
+    fi
+
+    if [[ ! -d "$target" ]]; then
+      echo "Target directory not found: $target" >&2
+      exit 1
+    fi
+
+    if [[ "$random_topic" == "true" ]]; then
+      if [[ ! -f "$target/.nomad-dev/config.env" || "$random_topic_explicit" == "true" ]]; then
+        ntfy_topic="$(generate_topic)"
+      fi
+    fi
+
+    preserve_config="false"
+    config_backup=""
+    if [[ -f "$target/.nomad-dev/config.env" && -z "$ntfy_topic" && -z "$ntfy_server" && -z "$ntfy_token" && -z "$ntfy_priority" ]]; then
+      preserve_config="true"
+      config_backup="$(mktemp)"
+      cp "$target/.nomad-dev/config.env" "$config_backup"
+    fi
+
+    require_template
+    copy_template "$target" "$force" "$preserve_config" "$config_backup"
+
+    if [[ -n "$ntfy_topic" || -n "$ntfy_server" || -n "$ntfy_token" || -n "$ntfy_priority" ]]; then
+      write_config "$target/.nomad-dev/config.env" "$ntfy_server" "$ntfy_topic" "$ntfy_token" "$ntfy_priority"
+      echo "Updated $target/.nomad-dev/config.env"
+    fi
+
+    echo "Nomad Dev files installed into $target"
+    ;;
+  clone-install)
+    target=""
+    repo=""
+    branch=""
+    force="false"
+    ntfy_topic=""
+    ntfy_server=""
+    ntfy_token=""
+    ntfy_priority=""
+    random_topic="true"
+
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --target)
+          target="$2"
+          shift 2
+          ;;
+        --repo)
+          repo="$2"
+          shift 2
+          ;;
+        --branch)
+          branch="$2"
+          shift 2
+          ;;
+        --force)
+          force="true"
+          shift
+          ;;
+        --ntfy-topic)
+          ntfy_topic="$2"
+          shift 2
+          ;;
+        --ntfy-server)
+          ntfy_server="$2"
+          shift 2
+          ;;
+        --ntfy-token)
+          ntfy_token="$2"
+          shift 2
+          ;;
+        --ntfy-priority)
+          ntfy_priority="$2"
+          shift 2
+          ;;
+        --random-topic)
+          random_topic="true"
+          shift
+          ;;
+        --no-random-topic)
+          random_topic="false"
+          shift
+          ;;
+        -h|--help)
+          usage
+          exit 0
+          ;;
+        *)
+          echo "Unknown option: $1" >&2
+          usage
+          exit 1
+          ;;
+      esac
+    done
+
+    if [[ -z "$repo" ]]; then
+      echo "Missing --repo" >&2
+      usage
+      exit 1
+    fi
+
+    if [[ -z "$target" ]]; then
+      echo "Missing --target" >&2
+      usage
+      exit 1
+    fi
+
+    if [[ "$random_topic" == "true" && -z "$ntfy_topic" ]]; then
+      ntfy_topic="$(generate_topic)"
+    fi
+
+    require_git
+    require_template
+    clone_repo "$repo" "$target" "$branch"
+    copy_template "$target" "$force" "false" ""
+
+    if [[ -n "$ntfy_topic" || -n "$ntfy_server" || -n "$ntfy_token" || -n "$ntfy_priority" ]]; then
+      write_config "$target/.nomad-dev/config.env" "$ntfy_server" "$ntfy_topic" "$ntfy_token" "$ntfy_priority"
+      echo "Updated $target/.nomad-dev/config.env"
+    fi
+
+    echo "Nomad Dev files installed into $target"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $cmd" >&2
+    usage
+    exit 1
+    ;;
+esac

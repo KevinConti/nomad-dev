@@ -1,0 +1,4 @@
+node_modules/
+/dist/
+Pulumi.*.yaml
+!Pulumi.dev.example.yaml

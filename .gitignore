@@ -1,0 +1,38 @@
+# macOS
+.DS_Store
+
+# Editor and local state
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.kubeconfig
+
+# Node / JS
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Pulumi and IaC local state
+**/.pulumi/
+Pulumi.*.yaml
+!infra/pulumi-aws/Pulumi.dev.example.yaml
+
+# Build outputs and temp
+build/
+dist/
+out/
+coverage/
+.tmp/
+tmp/
