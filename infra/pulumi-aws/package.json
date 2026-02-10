@@ -11,10 +11,10 @@
   },
   "dependencies": {
     "@pulumi/aws": "^7.19.0",
-    "@pulumi/pulumi": "^3.120.0"
+    "@pulumi/pulumi": "^3.219.0"
   },
   "devDependencies": {
-    "@types/node": "^20.11.30",
+    "@types/node": "^25.2.2",
     "typescript": "^5.4.5"
   }
 }
