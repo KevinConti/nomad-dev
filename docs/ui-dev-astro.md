@@ -15,7 +15,7 @@ Run the dev server
 1) SSH to the VPS and enter the repo:
 
 ```bash
-cd ~/development/client-ameritel
+cd ~/development/your-repo
 ```
 
 2) Install deps:

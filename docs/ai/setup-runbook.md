@@ -24,7 +24,8 @@ pulumi stack init dev
 pulumi config set aws:region us-east-1
 pulumi config set sshPublicKeyPath ~/.ssh/nomad-dev.pub
 pulumi config set enablePublicSsh false
-pulumi config set enableMosh false
+pulumi config set enableMosh true
+pulumi config set enablePublicMoshIngress false
 pulumi config set enableTailscaleUdp false
 pulumi up
 ```
