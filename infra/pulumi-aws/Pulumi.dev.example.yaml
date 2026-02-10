@@ -3,5 +3,6 @@ config:
   nomad-dev-aws:sshPublicKeyPath: ~/.ssh/nomad-dev.pub
   nomad-dev-aws:instanceType: t3.micro
   nomad-dev-aws:enablePublicSsh: false
-  nomad-dev-aws:enableMosh: false
+  nomad-dev-aws:enableMosh: true
+  nomad-dev-aws:enablePublicMoshIngress: false
   nomad-dev-aws:enableTailscaleUdp: false
