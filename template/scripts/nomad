@@ -6,7 +6,7 @@ CONFIG_FILE="$ROOT_DIR/.nomad-dev/config.env"
 
 ntfy_server="https://ntfy.sh"
 ntfy_topic=""
-ntfy_auth_bearer=""
+ntfy_header_value=""
 ntfy_priority_default=""
 
 usage() {
@@ -27,7 +27,7 @@ set_config_value() {
   case "$key" in
     NOMAD_NTFY_SERVER) ntfy_server="$value" ;;
     NOMAD_NTFY_TOPIC) ntfy_topic="$value" ;;
-    NOMAD_NTFY_TOKEN) ntfy_auth_bearer="$value" ;;
+    NOMAD_NTFY_TOKEN) ntfy_header_value="$value" ;;
     NOMAD_NTFY_PRIORITY) ntfy_priority_default="$value" ;;
     *) ;;
   esac
@@ -100,7 +100,7 @@ send_notification() {
   local priority="${2:-}"
   local server="$ntfy_server"
   local topic="$ntfy_topic"
-  local token="$ntfy_auth_bearer"
+  local header_value="$ntfy_header_value"
 
   local -a curl_args
   curl_args=(
@@ -115,8 +115,8 @@ send_notification() {
     "$server/$topic"
   )
 
-  if [[ -n "$token" ]]; then
-    curl_args+=(--header "Authorization: Bearer $token")
+  if [[ -n "$header_value" ]]; then
+    curl_args+=(--header "Authorization: Bearer $header_value")
   fi
 
   if [[ -n "$priority" ]]; then
