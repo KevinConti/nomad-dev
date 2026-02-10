@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_FILE="$ROOT_DIR/.nomad-dev/config.env"
 
-NOMAD_NTFY_SERVER="https://ntfy.sh"
-NOMAD_NTFY_TOPIC=""
-NOMAD_NTFY_TOKEN=""
-NOMAD_NTFY_PRIORITY=""
+ntfy_server="https://ntfy.sh"
+ntfy_topic=""
+ntfy_auth_bearer=""
+ntfy_priority_default=""
 
 usage() {
   cat <<'USAGE'
@@ -25,10 +25,10 @@ set_config_value() {
   local value="$2"
 
   case "$key" in
-    NOMAD_NTFY_SERVER) NOMAD_NTFY_SERVER="$value" ;;
-    NOMAD_NTFY_TOPIC) NOMAD_NTFY_TOPIC="$value" ;;
-    NOMAD_NTFY_TOKEN) NOMAD_NTFY_TOKEN="$value" ;;
-    NOMAD_NTFY_PRIORITY) NOMAD_NTFY_PRIORITY="$value" ;;
+    NOMAD_NTFY_SERVER) ntfy_server="$value" ;;
+    NOMAD_NTFY_TOPIC) ntfy_topic="$value" ;;
+    NOMAD_NTFY_TOKEN) ntfy_auth_bearer="$value" ;;
+    NOMAD_NTFY_PRIORITY) ntfy_priority_default="$value" ;;
     *) ;;
   esac
 }
@@ -52,24 +52,24 @@ parse_config_line() {
 }
 
 validate_config() {
-  NOMAD_NTFY_SERVER="${NOMAD_NTFY_SERVER%/}"
+  ntfy_server="${ntfy_server%/}"
 
-  if [[ -z "$NOMAD_NTFY_TOPIC" ]]; then
+  if [[ -z "$ntfy_topic" ]]; then
     echo "NOMAD_NTFY_TOPIC is not set in $CONFIG_FILE" >&2
     exit 1
   fi
 
-  if [[ ! "$NOMAD_NTFY_SERVER" =~ ^https://[^[:space:]]+$ ]]; then
+  if [[ ! "$ntfy_server" =~ ^https://[^[:space:]]+$ ]]; then
     echo "NOMAD_NTFY_SERVER must be an https URL." >&2
     exit 1
   fi
 
-  if [[ ! "$NOMAD_NTFY_TOPIC" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$ ]]; then
+  if [[ ! "$ntfy_topic" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$ ]]; then
     echo "NOMAD_NTFY_TOPIC must match ^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$." >&2
     exit 1
   fi
 
-  if [[ -n "$NOMAD_NTFY_PRIORITY" ]] && [[ ! "$NOMAD_NTFY_PRIORITY" =~ ^([1-5]|min|low|default|high|max|urgent)$ ]]; then
+  if [[ -n "$ntfy_priority_default" ]] && [[ ! "$ntfy_priority_default" =~ ^([1-5]|min|low|default|high|max|urgent)$ ]]; then
     echo "NOMAD_NTFY_PRIORITY must be 1-5 or one of: min, low, default, high, max, urgent." >&2
     exit 1
   fi
@@ -98,33 +98,32 @@ ensure_curl() {
 send_notification() {
   local message="$1"
   local priority="${2:-}"
-  local server="$NOMAD_NTFY_SERVER"
-  local topic="$NOMAD_NTFY_TOPIC"
-  local token="$NOMAD_NTFY_TOKEN"
+  local server="$ntfy_server"
+  local topic="$ntfy_topic"
+  local token="$ntfy_auth_bearer"
 
-  local auth_header=()
+  local -a curl_args
+  curl_args=(
+    --silent
+    --show-error
+    --fail
+    --retry 3
+    --retry-delay 1
+    --connect-timeout 5
+    --max-time 20
+    --data-binary "$message"
+    "$server/$topic"
+  )
+
   if [[ -n "$token" ]]; then
-    auth_header=(--header "Authorization: Bearer $token")
+    curl_args+=(--header "Authorization: Bearer $token")
   fi
 
-  local priority_header=()
   if [[ -n "$priority" ]]; then
-    priority_header=(--header "Priority: $priority")
+    curl_args+=(--header "Priority: $priority")
   fi
 
-  curl \
-    --silent \
-    --show-error \
-    --fail \
-    --retry 3 \
-    --retry-delay 1 \
-    --connect-timeout 5 \
-    --max-time 20 \
-    "${auth_header[@]}" \
-    "${priority_header[@]}" \
-    --data-binary "$message" \
-    "$server/$topic" \
-    >/dev/null
+  curl "${curl_args[@]}" >/dev/null
 }
 
 cmd="${1:-help}"
@@ -134,7 +133,7 @@ case "$cmd" in
   notify)
     require_config
     ensure_curl
-    priority="$NOMAD_NTFY_PRIORITY"
+    priority="$ntfy_priority_default"
     if [[ "${1:-}" == "--priority" || "${1:-}" == "-p" ]]; then
       priority="$2"
       shift 2
@@ -145,7 +144,7 @@ case "$cmd" in
   wait-notify)
     require_config
     ensure_curl
-    priority="$NOMAD_NTFY_PRIORITY"
+    priority="$ntfy_priority_default"
     if [[ "${1:-}" == "--priority" || "${1:-}" == "-p" ]]; then
       priority="$2"
       shift 2
