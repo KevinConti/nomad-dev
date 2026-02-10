@@ -11,7 +11,10 @@ const instanceType = config.get("instanceType") ?? "t3.micro";
 const enablePublicSsh = config.getBoolean("enablePublicSsh") ?? false;
 const allowedSshCidr = config.get("allowedSshCidr");
 const allowWideOpenSsh = config.getBoolean("allowWideOpenSsh") ?? false;
-const enableMosh = config.getBoolean("enableMosh") ?? false;
+const enableMosh = config.getBoolean("enableMosh") ?? true;
+const enablePublicMoshIngress = config.getBoolean("enablePublicMoshIngress") ?? false;
+const allowedMoshCidr = config.get("allowedMoshCidr");
+const allowWideOpenMosh = config.getBoolean("allowWideOpenMosh") ?? false;
 const enableTailscaleUdp = config.getBoolean("enableTailscaleUdp") ?? false;
 
 const keyName = config.get("keyName");
@@ -73,8 +76,32 @@ function resolveSshCidr(): string | undefined {
   return allowedSshCidr;
 }
 
+function resolveMoshCidr(): string | undefined {
+  if (!enablePublicMoshIngress) {
+    return undefined;
+  }
+
+  const moshCidr = allowedMoshCidr ?? allowedSshCidr;
+  if (!moshCidr) {
+    throw new Error(
+      "Set 'allowedMoshCidr' (or 'allowedSshCidr') when 'enablePublicMoshIngress=true'."
+    );
+  }
+  if (moshCidr === "0.0.0.0/0" && !allowWideOpenMosh) {
+    throw new Error(
+      "Refusing world-open Mosh ingress. Set 'allowWideOpenMosh=true' to explicitly override."
+    );
+  }
+  return moshCidr;
+}
+
 const sshCidr = resolveSshCidr();
+const moshCidr = resolveMoshCidr();
 const ingressRules: aws.types.input.ec2.SecurityGroupIngress[] = [];
+
+if (enablePublicMoshIngress && !enableMosh) {
+  throw new Error("Set 'enableMosh=true' when 'enablePublicMoshIngress=true'.");
+}
 
 if (sshCidr) {
   ingressRules.push({
@@ -86,15 +113,12 @@ if (sshCidr) {
   });
 }
 
-if (enableMosh) {
-  if (!sshCidr) {
-    throw new Error("Set 'enablePublicSsh=true' and 'allowedSshCidr' before enabling Mosh.");
-  }
+if (moshCidr) {
   ingressRules.push({
     protocol: "udp",
     fromPort: 60000,
     toPort: 61000,
-    cidrBlocks: [sshCidr],
+    cidrBlocks: [moshCidr],
     description: "Mosh",
   });
 }
@@ -149,7 +173,7 @@ const userData = pulumi.all([tailscaleAuthKey]).apply(([authKey]) => {
     "#!/bin/bash",
     "set -euo pipefail",
     "apt-get update",
-    "apt-get install -y curl git gnupg mosh tmux",
+    "apt-get install -y curl git gnupg tmux",
     "install -m 0755 -d /usr/share/keyrings",
     "curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg",
     "curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list",
@@ -157,6 +181,10 @@ const userData = pulumi.all([tailscaleAuthKey]).apply(([authKey]) => {
     "apt-get update",
     "apt-get install -y tailscale",
   ];
+
+  if (enableMosh) {
+    base.push("apt-get install -y mosh");
+  }
 
   if (authKey) {
     base.push(`tailscale up --authkey=${authKey}`);
