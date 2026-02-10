@@ -35,11 +35,12 @@ For a complete walkthrough, use `/docs/human/quickstart.md`.
 1. Provision infrastructure:
 ```bash
 cd infra/pulumi-aws
-npm install
+npm ci
 pulumi login
 pulumi stack init dev
 pulumi config set aws:region us-east-1
 pulumi config set sshPublicKeyPath ~/.ssh/nomad-dev.pub
+pulumi config set rootVolumeSizeGiB 30
 pulumi up
 ```
 

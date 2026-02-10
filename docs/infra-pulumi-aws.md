@@ -17,11 +17,12 @@ This guide provisions an Ubuntu 22.04 VPS for Nomad Dev using Pulumi (TypeScript
 ## Quickstart
 ```bash
 cd infra/pulumi-aws
-npm install
+npm ci
 pulumi login
 pulumi stack init dev
 pulumi config set aws:region us-east-1
 pulumi config set sshPublicKeyPath ~/.ssh/nomad-dev.pub
+pulumi config set rootVolumeSizeGiB 30
 pulumi config set enablePublicSsh false
 pulumi config set enableMosh true
 pulumi config set enablePublicMoshIngress false
@@ -35,6 +36,7 @@ Use only if needed:
 ```bash
 pulumi config set namePrefix nomad-dev
 pulumi config set instanceType t3.micro
+pulumi config set rootVolumeSizeGiB 30
 pulumi config set amiId ami-xxxxxxxx
 ```
 
@@ -80,6 +82,27 @@ pulumi config set enableTailscaleUdp true
 Optional: auto-run Tailscale with auth key:
 ```bash
 pulumi config set --secret tailscaleAuthKey tskey-xxxxxxxx
+```
+
+## Root volume resizing
+Increase root volume size:
+```bash
+pulumi config set rootVolumeSizeGiB 30
+pulumi up
+```
+
+If resizing an existing host, expand the filesystem on the instance:
+```bash
+lsblk
+df -hT
+sudo growpart /dev/nvme0n1 1
+sudo resize2fs /dev/nvme0n1p1
+df -hT
+```
+
+If your root filesystem is XFS, use:
+```bash
+sudo xfs_growfs -d /
 ```
 
 ## Outputs
